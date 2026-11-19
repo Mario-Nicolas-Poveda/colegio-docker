@@ -1,7 +1,7 @@
 # Informe · Taller práctico: Contenerización del Sistema de Administración de un Colegio
 
 **Estudiante:** Mario Poveda · **Curso:** Programación Web 02-04 · **Fecha:** noviembre de 2026
-**Repositorio:** `https://github.com/<usuario>/colegio-docker` *(completar)*
+**Repositorio:** https://github.com/Mario-Nicolas-Poveda/colegio-docker
 
 > Nota: el archivo `colegio-docker.zip` del curso no estaba disponible. El proyecto base (API Express en capas, PostgreSQL, 20 pruebas con `node:test` y frontend React + Tailwind v4) se construyó siguiendo la estructura y la API que describe el taller y las guías de Backend con Express (Partes I a V).
 
@@ -115,11 +115,13 @@ web       Up
 
 ## Fase 6. Registro y CI/CD
 
-*(Completar después de subir el repositorio)*
-- URL del repositorio.
-- **[CAPTURA]** Actions: job `pruebas` y después los dos jobs `publicar` en paralelo para `v1.0.0`.
-- **[CAPTURA]** Packages: `colegio-api` y `colegio-web` con `1.0.0`, `1.0`, `sha-*`, `latest`.
-- **[CAPTURA]** Pull request `prueba-rota` con el job `pruebas` en rojo y sin publicación.
+- Repositorio: https://github.com/Mario-Nicolas-Poveda/colegio-docker
+- Push a `main`: `pruebas` ✅ → `Publicar api` ✅ y `Publicar web` ✅ en paralelo.
+- Tag `v1.0.0`: ✅ https://github.com/Mario-Nicolas-Poveda/colegio-docker/actions/runs/44430350139 **[CAPTURA]**
+- Imágenes públicas en GHCR, descargadas sin iniciar sesión: `ghcr.io/mario-nicolas-poveda/colegio-api` y `colegio-web` con `1.0.0`, `1.0`, `sha-*` y `latest` (después también `1.1.0` y `1.1`). **[CAPTURA de Packages]**
+- PR #1 `prueba-rota` (`grado: 12` → `grado: 10`): `Pruebas del backend` ❌ **failure**, `Publicar` ⏭ **skipped**: no se publicó ninguna imagen. Se cerró sin fusionar. https://github.com/Mario-Nicolas-Poveda/colegio-docker/pull/1 **[CAPTURA]**
+
+Diferencia con la publicación manual del paso 1: el pipeline publica solo si las pruebas pasan, y calcula las etiquetas del tag semántico y del commit, sin intervención manual.
 
 ## Fase 7. Producción y observabilidad
 
@@ -137,4 +139,15 @@ web       Up
 - Errores 4xx/5xx: un `404` (`/api/estudiantes/999`) y un `422` (POST con cuerpo vacío); ningún 5xx.
 - `State.Health`: `healthy`, `FailingStreak: 0`.
 - **Respaldo y restauración:** total 9 → `respaldar.sh` → `down -v` (desastre) → 8 → restauración → **9**. **[CAPTURA]**
-- *(Completar)* Tiempos de actualización a `1.1.0` y de reversión a `1.0.0` desde GHCR.
+
+**Despliegue desde el registro** (carpeta `despliegue-colegio` con solo `compose.yaml`, `compose.prod.yaml`, `db/`, `secrets/` y `.env`; sin código fuente):
+
+| Operación | Tiempo | Verificación |
+|---|---|---|
+| `pull` + `up` de 1.0.0 | (primera descarga) | API `version: 1.0.0`, subtítulo "Gestión de estudiantes" |
+| Actualización a 1.1.0 (`pull` + `up -d --no-build`) | **17,6 s** | API `1.1.0`, subtítulo "Gestión de estudiantes · v1.1" |
+| Reversión a 1.0.0 (imagen ya en caché local) | **10,6 s** | API `1.0.0`, subtítulo original |
+
+La reversión es más rápida porque no hay que descargar nada: solo se recrean los contenedores `api` y `web`. `db` y su volumen no se tocan, así que no se pierden datos. **[CAPTURA del pie de página con cada versión]**
+
+**Parte B (opcional):** no se realizó por no contar con un VPS ni un dominio. `compose.prod.yaml` con Traefik y HTTPS quedó listo y validado con `docker compose config`.

@@ -1,0 +1,16 @@
+== Despliegue 1.0.0 desde GHCR (carpeta sin código: compose.prod.yaml compose.yaml db secrets )
+$ docker compose pull
+ api Pulled 
+SERVICE   IMAGE                                            STATUS
+api       ghcr.io/mario-nicolas-poveda/colegio-api:1.0.0   Up 8 seconds (healthy)
+db        postgres:17-alpine                               Up 14 seconds (healthy)
+web       ghcr.io/mario-nicolas-poveda/colegio-web:1.0.0   Up 1 second
+web: Gestión de estudiantes | API: {"estado":"ok","baseDeDatos":"conectada","version":"1.0.0"}
+
+== Actualización a 1.1.0
+tiempo (pull + up): 17.6 s
+web: Gestión de estudiantes · v1.1 | API: {"estado":"ok","baseDeDatos":"conectada","version":"1.1.0"}
+
+== Reversión a 1.0.0
+tiempo (imagen ya en caché): 10.6 s
+web: Gestión de estudiantes | API: {"estado":"ok","baseDeDatos":"conectada","version":"1.0.0"}
