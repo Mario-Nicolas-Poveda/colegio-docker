@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+.env
+secrets/*.txt
+respaldos/
+*.sql.gz
+respaldo-*.sql

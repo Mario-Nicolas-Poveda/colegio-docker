@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Paleta institucional UNICESAR */
+@theme {
+  --color-verde: #6bbe37;
+  --color-verde-oscuro: #4e9a24;
+  --color-azul: #5b8fa3;
+  --color-azul-oscuro: #003d82;
+  --color-fondo: #f5f7fa;
+  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+body {
+  @apply bg-fondo text-slate-800 antialiased;
+}
