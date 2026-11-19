@@ -1,246 +1,229 @@
-# Taller práctico: Contenerización del Sistema de Administración de un Colegio
+# Informe del taller práctico de contenerización
 
-**Estudiante:** Mario Nicolás Poveda · **Curso:** Programación Web, grupo 02-04 · **Universidad Popular del Cesar** · Noviembre de 2026
+Sistema de Administración de un Colegio
 
-**Repositorio:** https://github.com/Mario-Nicolas-Poveda/colegio-docker
+Mario Nicolás Poveda
+Programación Web, grupo 02-04
+Universidad Popular del Cesar
+Noviembre de 2026
 
-**Imágenes:** `ghcr.io/mario-nicolas-poveda/colegio-api` y `ghcr.io/mario-nicolas-poveda/colegio-web`
+Repositorio: https://github.com/Mario-Nicolas-Poveda/colegio-docker
 
-> **Nota sobre el proyecto base.** El archivo `colegio-docker.zip` del curso no estaba disponible en el aula virtual. El proyecto se construyó siguiendo la estructura, la API y las versiones que describe el taller (React 19 + Vite + Tailwind v4, Node 22 + Express 5 en capas rutas → servicio → repositorio, PostgreSQL 17 y 20 pruebas con `node:test`), con base en las guías de Backend con Express, Partes I a V. Las salidas completas de cada comando están en `evidencias/faseN.txt` del repositorio.
+Imágenes publicadas: ghcr.io/mario-nicolas-poveda/colegio-api y ghcr.io/mario-nicolas-poveda/colegio-web
 
-## Arquitectura
+## Introducción
 
-```
-Navegador → web (Nginx :8080) ──/api──→ api (Express :3000) ──SQL──→ db (PostgreSQL :5432)
-            └────── red-web ──────────┘ └──────── red-datos (internal) ────────┘
-```
-
----
+En este taller se contenerizó y desplegó una versión reducida del sistema del colegio, formada por tres servicios: un frontend en React servido con Nginx, una API REST en Express y una base de datos PostgreSQL. El archivo colegio-docker.zip del curso no estaba disponible en el aula virtual, así que el proyecto base se armó siguiendo la estructura y los endpoints que indica el taller y lo visto en las guías de Backend con Express. Las salidas completas de los comandos de cada fase están en la carpeta evidencias del repositorio.
 
 ## Fase 0. Preparación del entorno
 
-- Docker 29.1.3 (Client y Server), Docker Compose v2.40.3, git 2.53 y Node 24.
-- Primer commit: `Proyecto base sin contenerizar`.
-- `secrets/db_password.txt` creado. `.gitignore` excluye `secrets/*.txt` y `.env`; se verificó con `git status` que no entran al repositorio.
+Se verificó que estuvieran instalados Docker 29.1.3, Docker Compose 2.40.3, Git 2.53 y Node. Después se creó el archivo secrets/db_password.txt y se hizo el primer commit del proyecto sin archivos de Docker. Con git status se comprobó que el archivo del secreto y el .env no entran al repositorio porque están en el .gitignore.
 
 ## Fase 1. Primeros contenedores
 
+Salida resumida de los comandos de esta fase:
+
 ```
 $ docker run -d --name prueba-web -p 8080:80 nginx:1.29-alpine
-$ curl -I http://localhost:8080          → HTTP/1.1 200 OK · Server: nginx/1.29.8
-$ docker logs prueba-web                 → 172.17.0.1 - - "HEAD / HTTP/1.1" 200
-$ docker exec prueba-web sh -c 'echo "<h1>Colegio</h1>" > /usr/share/nginx/html/index.html'
-$ docker stop prueba-web && docker start prueba-web ; curl → <h1>Colegio</h1>
-$ docker rm -f prueba-web ; docker run ... ; curl       → <title>Welcome to nginx!</title>
+$ curl -I http://localhost:8080
+HTTP/1.1 200 OK
+Server: nginx/1.29.8
 
-$ docker run --rm alpine ps              → PID 1 root ps
-$ docker run --rm alpine hostname        → 7699a190a445
-$ docker run --rm alpine ip addr         → lo 127.0.0.1/8 · eth0 172.17.0.2/16
-$ docker run --rm --memory=64m alpine cat /sys/fs/cgroup/memory.max → 67108864
+$ docker exec prueba-web sh -c 'echo "<h1>Colegio</h1>" > /usr/share/nginx/html/index.html'
+$ docker stop prueba-web && docker start prueba-web
+$ curl http://localhost:8080
+<h1>Colegio</h1>
+$ docker rm -f prueba-web && docker run -d --name prueba-web -p 8080:80 nginx:1.29-alpine
+$ curl http://localhost:8080
+<title>Welcome to nginx!</title>
+
+$ docker run --rm alpine ps
+PID   USER     TIME  COMMAND
+    1 root      0:00 ps
+$ docker run --rm alpine hostname
+7699a190a445
+$ docker run --rm alpine ip addr
+1: lo ... inet 127.0.0.1/8
+2: eth0 ... inet 172.17.0.2/16
+$ docker run --rm --memory=64m alpine cat /sys/fs/cgroup/memory.max
+67108864
 
 $ docker exec pg-temporal psql -U postgres -c "SELECT version();"
-  PostgreSQL 17.12 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0)
+PostgreSQL 17.12 on x86_64-pc-linux-musl
 ```
 
-**(a) ¿Por qué el cambio sobrevivió a `stop/start` y no a `rm`?**
-Cada contenedor tiene una **capa escribible** propia sobre las capas de solo lectura de la imagen. El `echo` escribió en esa capa. `stop`/`start` detiene y reanuda el *mismo* contenedor, así que la capa se conserva. `rm` elimina el contenedor junto con su capa escribible, y el `run` siguiente crea uno nuevo desde la imagen original. Por eso los datos que deben persistir van en volúmenes.
+a) El cambio sobrevivió a stop/start pero no a rm porque cada contenedor tiene su propia capa escribible encima de la imagen. Al hacer stop y start se usa el mismo contenedor, así que esa capa sigue ahí. Con rm el contenedor se elimina junto con su capa, y el siguiente run parte otra vez de la imagen original. Por eso los datos que se quieren conservar deben ir en un volumen.
 
-**(b) ¿Qué namespace explica cada resultado del paso 2?**
+b) Cada resultado del paso 2 se explica por un namespace distinto. ps solo muestra un proceso con PID 1 por el namespace pid, que le da al contenedor su propio árbol de procesos. hostname devuelve el ID del contenedor por el namespace uts. ip addr muestra una interfaz eth0 propia con la IP 172.17.0.2 por el namespace net. El valor 67108864 (64 MiB) de memory.max no viene de un namespace sino de los cgroups, que se encargan de limitar los recursos.
 
-| Comando | Resultado | Mecanismo |
-|---|---|---|
-| `alpine ps` | Solo existe `PID 1 ps` | Namespace **pid**: árbol de procesos propio |
-| `alpine hostname` | `7699a190a445` (ID del contenedor) | Namespace **uts**: nombre de host propio |
-| `alpine ip addr` | `lo` y `eth0` 172.17.0.2/16 | Namespace **net**: pila de red propia, conectada al bridge `docker0` |
-| `--memory=64m ... memory.max` | `67108864` bytes (64 MiB) | **cgroups v2**: no aísla, *limita*; el kernel aplica el tope de memoria |
-
-**(c) Tamaños de las imágenes descargadas**
-
-| Imagen | Tamaño |
-|---|---|
-| `postgres:17-alpine` | 424 MB |
-| `nginx:1.29-alpine` | 93,5 MB |
-| `alpine:latest` | 13 MB |
-| `hello-world:latest` | 25,9 kB |
+c) Tamaños de las imágenes descargadas: postgres:17-alpine 424 MB, nginx:1.29-alpine 93,5 MB, alpine 13 MB y hello-world 25,9 kB.
 
 ## Fase 2. Dockerfile de una sola etapa
 
-| Imagen | Base | Tamaño | Reconstrucción tras cambiar `src/app.js` |
-|---|---|---|---|
-| `colegio-api:v1` | `node:22` | **1,64 GB** | **13,3 s**: `npm ci` se ejecuta otra vez |
-| `colegio-api:v2` | `node:22-alpine` | **252 MB** | **3,4 s**: `npm ci` aparece como **CACHED** |
+Primero se construyó la versión 1 del Dockerfile, basada en node:22 y con COPY . . antes de npm ci. Luego se hizo la versión 2 con node:22-alpine, copiando primero package.json y package-lock.json, instalando solo dependencias de producción y ejecutando como el usuario node.
 
-v1 hace `COPY . .` antes de `npm ci`, así que cualquier cambio en el código invalida esa capa y todas las siguientes. v2 copia primero solo `package.json` y `package-lock.json`, de modo que las dependencias se reconstruyen únicamente cuando cambian. Además usa Alpine, `--omit=dev`, `USER node` y la forma exec.
-
-![API sin base de datos: 503 y usuario node](capturas/f2-salud-503.png)
-
-Sin variables obligatorias: `Faltan variables de entorno obligatorias: DB_NAME, DB_USER, DB_PASSWORD (o su versión _FILE)`.
-
-**Forma exec frente a forma shell**
-
-| Variante | PID 1 | `time docker stop` |
+| Imagen | Tamaño | Reconstrucción después de cambiar app.js |
 |---|---|---|
-| `CMD ["node","src/server.js"]` (exec) | `node` | 0,90 s |
-| `CMD node src/server.js` (shell, Alpine) | `node` | 1,22 s |
-| `CMD npm start` (shell, v1) | `/bin/sh -c npm start` → `npm` → `sh` → `node` (PID 20) | 1,85 s |
+| colegio-api:v1 | 1,64 GB | 13,3 s (npm ci se ejecuta de nuevo) |
+| colegio-api:v2 | 252 MB | 3,4 s (npm ci sale como CACHED) |
 
-`docker stop` envía SIGTERM **solo al PID 1** y, si no termina en 10 s, envía SIGKILL. En forma exec, `node` es el PID 1, recibe la señal y ejecuta el apagado ordenado de `server.js`: cierra el servidor HTTP y el pool de PostgreSQL. En forma shell, el PID 1 es `/bin/sh -c`, que normalmente no reenvía señales. En Alpine, el `sh` de busybox hace `exec` cuando el comando es uno solo, por eso `node` siguió siendo el PID 1 y la diferencia fue pequeña. Con `npm start`, `node` quedó tres procesos por debajo y el apagado dependió de que npm reenviara la señal. La forma exec es la única que garantiza el comportamiento.
+La diferencia de tiempo se debe al orden de las instrucciones. En la v1, cualquier cambio en el código invalida la capa del COPY y con ella el npm ci. En la v2 las dependencias están en una capa anterior al código, así que solo se reinstalan si cambia el package.json.
+
+Al ejecutar la API sin base de datos, /api/salud responde 503 y whoami muestra que el proceso corre como node:
+
+![](capturas/f2-salud-503.png)
+
+Si se ejecuta sin variables, la API termina con el mensaje "Faltan variables de entorno obligatorias: DB_NAME, DB_USER, DB_PASSWORD".
+
+Para comparar la forma exec con la forma shell se midió el tiempo de docker stop:
+
+| CMD | Proceso con PID 1 | docker stop |
+|---|---|---|
+| ["node", "src/server.js"] | node | 0,90 s |
+| node src/server.js | node | 1,22 s |
+| npm start (v1) | /bin/sh -c npm start | 1,85 s |
+
+docker stop le manda SIGTERM solo al proceso con PID 1. Con la forma exec ese proceso es node, que recibe la señal y cierra el servidor y la conexión a la base de datos de forma ordenada. Con la forma shell el PID 1 suele ser /bin/sh, que no reenvía la señal, y Docker termina matando el proceso a los 10 segundos. En las pruebas la diferencia fue pequeña porque en Alpine el sh ejecuta directamente el comando cuando es uno solo, y porque las versiones recientes de npm sí reenvían la señal. Aun así, en la v1 se ve que node quedó como PID 20 debajo de sh y npm, y la forma exec es la única que asegura un apagado correcto.
 
 ## Fase 3. Multi-stage builds
 
-| Imagen | Tamaño | Contenido |
-|---|---|---|
-| `colegio-api:v1` | 1,64 GB | Debian + Node + devDependencies + código + `test/` |
-| `colegio-api:v2` | 252 MB | Alpine con dependencias de producción |
-| `colegio-api:local` (multi-stage) | **245 MB** | Solo `node_modules`, `package.json` y `src` (sin `test/`), usuario `node` |
-| `colegio-web:dev` | 355 MB | Node + Vite + código fuente |
-| `colegio-web:local` (multi-stage) | **81,9 MB** | Nginx sin privilegios + 270 kB de `dist/`, sin Node |
+Se reemplazaron los Dockerfiles por versiones de varias etapas. En la API hay etapas de dependencias, desarrollo, pruebas y producción. En el frontend, una etapa compila con Vite y la imagen final solo lleva Nginx con los archivos generados.
 
-- Etapa `pruebas` con el código correcto: `tests 20 · pass 20 · fail 0`.
-- `docker run --rm colegio-web:local id` → `uid=101(nginx)`; `which node` → sin resultado.
+| Imagen | Tamaño |
+|---|---|
+| colegio-api:v1 | 1,64 GB |
+| colegio-api:v2 | 252 MB |
+| colegio-api:local | 245 MB |
+| colegio-web:dev | 355 MB |
+| colegio-web:local | 81,9 MB |
 
-**Prueba rota a propósito** (`grado: 12` → `grado: 10` en "rechaza un grado fuera del rango"): la construcción se detiene en la etapa de pruebas.
+La imagen final de la API solo contiene node_modules, package.json y src, sin la carpeta de pruebas. La del frontend corre como uid=101(nginx) y no tiene Node instalado.
 
-![Construcción de la etapa pruebas fallando](capturas/f3-prueba-rota-inicio.png)
+La etapa de pruebas ejecuta las 20 pruebas durante la construcción. Para comprobar que funciona se cambió grado: 12 por grado: 10 en la prueba "rechaza un grado fuera del rango", y la construcción se detuvo:
 
-![pass 19, fail 1 y ERROR en Dockerfile:23](capturas/f3-prueba-rota-final.png)
+![](capturas/f3-prueba-rota-inicio.png)
+
+![](capturas/f3-prueba-rota-final.png)
 
 ## Fase 4. Redes y volúmenes a mano
 
-El sistema se levantó con comandos `docker`: red `red-web`, red `red-datos --internal`, volumen `datos-db`, la base de datos con los scripts de `db/init` y el secreto montado como archivo, la API conectada a las dos redes y el frontend publicado en el puerto 8080.
+Antes de usar Compose se levantaron los tres contenedores con comandos docker: dos redes (red-web y red-datos, esta última interna), un volumen para la base de datos y la contraseña montada como archivo. En total fueron 10 comandos.
 
-![Aplicación funcionando: estadísticas y formulario](capturas/f4-app-tablero.png)
+La aplicación quedó funcionando en http://localhost:8080:
 
-![Lista y pie "API: ok - base de datos conectada"](capturas/f4-app-lista.png)
+![](capturas/f4-app-tablero.png)
 
-![Registro de un estudiante nuevo](capturas/f4-registro.png)
+![](capturas/f4-app-lista.png)
 
-![Estudiante registrado, visible al filtrar por grado 7](capturas/f4-filtro.png)
+Se registró un estudiante nuevo y aparece al filtrar por su grado:
 
-**Aislamiento de redes**
+![](capturas/f4-registro.png)
 
-| Comando | Resultado | Explicación |
-|---|---|---|
-| `docker exec web nslookup api` | `Address: 172.19.0.2` | `web` y `api` comparten `red-web`; el DNS interno de Docker resuelve el nombre del contenedor |
-| `docker exec web nslookup db` | `Can't find db: No answer` | `web` no está en `red-datos`: el frontend no puede llegar a la base de datos |
-| `docker exec db ping -c 1 8.8.8.8` | `Network unreachable` | `red-datos` es interna y no tiene salida a internet |
+![](capturas/f4-filtro.png)
 
-- **Persistencia:** después de `docker rm -f db` y de crear un contenedor nuevo con el mismo volumen, `docker logs db | grep -c initdb.d` → **0**: los scripts no se ejecutan con el volumen lleno, y el estudiante registrado sigue ahí.
-- **Respaldo:** `respaldo-fase4.sql` (125 líneas) generado con `pg_dump`.
-- **Comandos necesarios:** 10 (2 redes, 1 volumen, 3 `run`, 1 `network connect` y verificaciones).
-- **Errores cometidos:** en Git Bash para Windows, rutas como `/run/secrets/...` y `/sys/...` se convertían en rutas de Windows (`C:/Program Files/Git/...`). Se resolvió con `MSYS_NO_PATHCONV=1` y con `$(pwd -W)` para los bind mounts.
+Resultados del paso 5:
 
-## Fase 5. Orquestación con Docker Compose
+- docker exec web nslookup api resuelve a 172.19.0.2, porque web y api están en red-web.
+- docker exec web nslookup db falla, porque web no está en red-datos y no puede ver la base de datos.
+- docker exec db ping 8.8.8.8 da "Network unreachable", porque red-datos es interna y no tiene salida a internet.
 
-Con un solo comando (`docker compose up -d --build`) el sistema arranca en orden: `db` sana → `api` sana → `web`. Solo `web` (8080) y `adminer` (8081) se publican hacia fuera.
+Para probar la persistencia se eliminó el contenedor db y se creó otro con el mismo volumen. Los scripts de inicialización no se volvieron a ejecutar (grep -c initdb.d devolvió 0) y el estudiante registrado seguía apareciendo. Al final se sacó un respaldo con pg_dump en respaldo-fase4.sql.
 
-![docker compose ps con db y api healthy](capturas/f5-compose-ps.png)
+El principal problema fue que Git Bash en Windows convierte las rutas como /run/secrets en rutas de Windows. Se solucionó usando MSYS_NO_PATHCONV=1 y pwd -W para los montajes.
 
-![Adminer: estructura de la tabla estudiantes](capturas/f5-adminer-estructura.png)
+## Fase 5. Docker Compose
 
-![Adminer: datos de la tabla estudiantes](capturas/f5-adminer-datos.png)
+Con el archivo compose.yaml todo el sistema se levanta con un solo comando. Gracias a los healthchecks y a depends_on, primero arranca db, luego api cuando la base de datos está lista y por último web.
 
-**Comportamiento ante fallos (paso 5)**
+![](capturas/f5-compose-ps.png)
 
-- `docker compose stop db` → `/api/salud` responde **503**. A los ~55 s, `api` aparece **(unhealthy)**: 5 intentos fallidos cada 10 s. El proceso sigue vivo; solo informa que no está sano.
-- `docker compose start db` → `api` vuelve a **(healthy)** sin reiniciarse, porque el pool de `pg` reconecta solo.
-- `docker compose exec api kill 1` → el proceso principal termina y Docker lo reinicia por `restart: unless-stopped`: **RestartCount pasa de 0 a 1**.
-- `docker compose stop api` → `Exited (0)` y **no** se reinicia. La política de reinicio actúa cuando el contenedor termina por sí mismo; una detención manual se respeta.
+Con el perfil herramientas se levanta Adminer en el puerto 8081:
 
-**Recarga en caliente (paso 6).** En Docker Desktop para Windows, los bind mounts de `compose.dev.yaml` no generan eventos de archivos dentro del contenedor, como advierte la sección de solución de problemas. Se añadió `compose.watch.yaml` con **Compose Watch** (Módulo 5.7):
+![](capturas/f5-adminer-estructura.png)
+
+![](capturas/f5-adminer-datos.png)
+
+Comportamiento ante fallos:
+
+- Al detener db, /api/salud responde 503 y a los 55 segundos aproximadamente api aparece como unhealthy. El proceso sigue vivo; solo indica que no puede trabajar.
+- Al volver a iniciar db, api vuelve a healthy sin reiniciarse, porque el pool de conexiones se reconecta solo.
+- Con kill 1 dentro de api el proceso termina y Docker lo reinicia por la política restart: unless-stopped. El RestartCount pasó de 0 a 1.
+- Con docker compose stop api el contenedor queda detenido y no se reinicia. La política de reinicio solo actúa cuando el contenedor termina por su cuenta, no cuando uno lo detiene a propósito.
+
+Para la recarga en caliente, los bind mounts de compose.dev.yaml no detectaban los cambios en Docker Desktop para Windows. Por eso se agregó el archivo compose.watch.yaml, que usa Compose Watch para copiar los cambios dentro del contenedor:
 
 ```
 docker compose -f compose.yaml -f compose.dev.yaml -f compose.watch.yaml up --build --watch
 ```
 
-- Al editar `backend/src/app.js`: `Syncing service "api"` → `Restarting 'src/server.js'`, y `/api/salud` devuelve `"colegio":"UNICESAR"`.
-- Al editar `Header.jsx`: `Syncing service "web"` → `[vite] hmr update /src/components/Header/Header.jsx`, y el navegador se actualiza sin recargar la página.
+Al cambiar el subtítulo en Header.jsx, la página se actualizó sola y en los logs aparecen el "Syncing service web" y el "hmr update" de Vite. Al cambiar app.js, la API se reinició con node --watch.
 
-![Recarga en caliente: navegador actualizado, Syncing y hmr update](capturas/f5-recarga-caliente.png)
+![](capturas/f5-recarga-caliente.png)
 
-**Ciclo de los datos (paso 7):** con un estudiante extra el total es 9 → `down` + `up`: **9**, porque el volumen se conserva → `down -v` + `up`: **8**, porque el volumen se borró y los scripts vuelven a cargar los datos iniciales.
+Sobre el ciclo de los datos: con docker compose down los datos se conservan porque el volumen no se borra, mientras que con down -v se elimina el volumen y al volver a subir solo quedan los 8 estudiantes iniciales.
 
-## Fase 6. Registro de imágenes y CI/CD
+## Fase 6. Registro y CI/CD
 
-El workflow `.github/workflows/docker.yml` construye la etapa `pruebas` y, solo si pasa y el evento no es un pull request, publica `colegio-api` y `colegio-web` en GHCR en paralelo, con etiquetas calculadas por `docker/metadata-action`.
+El workflow de GitHub Actions primero construye la etapa de pruebas. Si pasan y el evento no es un pull request, construye y publica las imágenes de api y web en GitHub Container Registry. Las etiquetas se calculan a partir del tag de versión y del commit.
 
-![Actions: tag v1.0.0, pruebas y luego publicar en paralelo](capturas/f6-actions-v100.png)
+Ejecución del tag v1.0.0:
 
-![Packages: colegio-api público con 1.0.0, 1.0, 1.1.0, 1.1, sha-* y latest](capturas/f6-packages.png)
+![](capturas/f6-actions-v100.png)
 
-**Pull request que falla.** Rama `prueba-rota` con la prueba de grado modificada:
+Paquete colegio-api con sus etiquetas:
 
-![PR #1 cerrado sin fusionar](capturas/f6-pr-cerrado.png)
+![](capturas/f6-packages.png)
 
-![Checks: pruebas en failure y publicar omitido](capturas/f6-pr-checks.png)
+Para probar que el pipeline no publica nada si una prueba falla, se abrió un pull request desde la rama prueba-rota con la prueba modificada. El job de pruebas falló, el de publicar no se ejecutó y el pull request se cerró sin fusionar.
 
-El job `Publicar` aparece como `${{ matrix.servicio }}` sin expandir porque **nunca llegó a ejecutarse**: no se publicó ninguna imagen. El log de CI muestra el mismo fallo que el build local de la Fase 3:
+![](capturas/f6-pr-cerrado.png)
 
-![Log del job de pruebas en GitHub Actions](capturas/f6-ci-log-fallo.png)
+![](capturas/f6-pr-checks.png)
 
-A diferencia de la publicación manual, el pipeline publica solo si las pruebas pasan, y calcula las etiquetas semánticas y del commit sin intervención manual.
+![](capturas/f6-ci-log-fallo.png)
+
+El error en GitHub es el mismo que se obtuvo en local en la fase 3, en la línea RUN npm test del Dockerfile.
 
 ## Fase 7. Producción y observabilidad
 
-**Despliegue desde el registro.** En la carpeta `despliegue-colegio` solo están `compose.yaml`, `compose.prod.yaml`, `db/`, `secrets/` y `.env` (con `IMAGEN_PREFIJO=ghcr.io/mario-nicolas-poveda/colegio` y `TAG=1.0.0`), sin código fuente. Se ejecutó `docker compose pull` y `docker compose up -d --no-build`.
+Para simular producción se creó una carpeta aparte, despliegue-colegio, con solo los archivos de Compose, los scripts de la base de datos, el secreto y un .env apuntando a las imágenes de GHCR. Desde ahí se descargó y levantó la versión 1.0.0 sin código fuente.
 
-**Recursos bajo carga (3000 peticiones a `/api/estudiantes`):**
+Uso de recursos durante una carga de 3000 peticiones:
 
-![docker stats durante la carga](capturas/f7-stats-carga.png)
+![](capturas/f7-stats-carga.png)
 
-| Contenedor | CPU | Memoria |
-|---|---|---|
-| colegio-api-1 (Node) | 10,96 % | 29,3 MiB |
-| colegio-web-1 (Nginx) | 3,92 % | 7,9 MiB |
-| colegio-db-1 (PostgreSQL) | 1,81 % | 22,0 MiB |
+La API fue la que más CPU usó (cerca del 11 %), mientras que Nginx y PostgreSQL se mantuvieron por debajo del 4 %. Entre los tres contenedores no llegaron a 60 MiB de memoria.
 
-La API hace la mayor parte del trabajo, Nginx casi no consume al servir y reenviar, y los tres servicios juntos usan menos de 60 MiB.
+Análisis de los logs:
 
-**Análisis de logs:**
+![](capturas/f7-logs.png)
 
-![Conteo de 200, errores 4xx/5xx y estado de salud](capturas/f7-logs.png)
+Hubo 3253 respuestas con estado 200 en los últimos 10 minutos y un solo error, un 404 provocado a propósito. No apareció ningún error 5xx y el healthcheck de la API seguía en healthy.
 
-- **3253** respuestas 200 en los últimos 10 minutos.
-- Un solo error, el `404` de `/api/estudiantes/999` provocado a propósito; ningún 5xx bajo carga.
-- `State.Health`: `healthy`, `FailingStreak: 0`, con los últimos 5 chequeos en `ExitCode 0`.
+Después se publicó la versión 1.1.0 con un cambio en el subtítulo y se actualizó cambiando el TAG en el .env:
 
-**Actualización a 1.1.0** (cambio visible en el subtítulo):
+![](capturas/f7-v110-encabezado.png)
 
-![v1.1.0: subtítulo "Gestión de estudiantes · v1.1"](capturas/f7-v110-encabezado.png)
+![](capturas/f7-v110-pie.png)
 
-![v1.1.0: pie "Frontend v1.1.0 · API: ok (v1.1.0)"](capturas/f7-v110-pie.png)
+Luego se volvió a la versión 1.0.0:
 
-**Reversión a 1.0.0:**
+![](capturas/f7-v100-encabezado.png)
 
-![v1.0.0: subtítulo original](capturas/f7-v100-encabezado.png)
+![](capturas/f7-v100-pie.png)
 
-![v1.0.0: pie "Frontend v1.0.0 · API: ok (v1.0.0)"](capturas/f7-v100-pie.png)
+![](capturas/f7-reversion-tiempo.png)
 
-![Tiempo de la reversión: 10,35 s](capturas/f7-reversion-tiempo.png)
+La actualización tardó 17,6 s porque tuvo que descargar las imágenes nuevas, y la reversión 10,35 s porque la versión anterior ya estaba en el equipo. En ambos casos los datos se mantuvieron, porque solo se recrean los contenedores de api y web y el volumen de la base de datos no se toca.
 
-| Operación | Tiempo |
-|---|---|
-| Actualización a 1.1.0 (`pull` + `up -d --no-build`) | 17,6 s |
-| Reversión a 1.0.0 (imagen ya en caché) | **10,35 s** |
+Por último se probó el respaldo con el script respaldar.sh. Se sacó el respaldo con 10 estudiantes, se simuló la pérdida de datos con docker compose down -v (quedaron 8) y se restauró, volviendo a 10:
 
-La reversión es más rápida porque no hay nada que descargar: solo se recrean `api` y `web`. `db` y su volumen no se tocan, y por eso los 10 estudiantes siguen presentes en las dos versiones.
+![](capturas/f7-respaldo.png)
 
-**Respaldo, desastre y restauración** con `respaldar.sh`:
+Antes de restaurar hubo que borrar la tabla, porque al iniciar con el volumen vacío los scripts de db/init la vuelven a crear y el respaldo choca con ella.
 
-![Total 10 → down -v → 8 → restauración → 10](capturas/f7-respaldo.png)
+La parte B, el despliegue con HTTPS en un VPS, no se hizo porque no se contaba con un servidor ni con un dominio. El archivo compose.prod.yaml con Traefik sí quedó configurado en el repositorio.
 
-Los scripts de `db/init` recrean la tabla al iniciar un volumen vacío, así que antes de restaurar se elimina (`DROP TABLE estudiantes CASCADE`); si no, el respaldo choca con la tabla existente. En un servidor real, `respaldar.sh` se programaría con `cron`.
+## Conclusiones
 
-**Parte B (opcional):** no se realizó por no contar con un VPS ni un dominio. `compose.prod.yaml` con Traefik, HTTPS de Let's Encrypt, redirección HTTP → HTTPS y el puerto 8080 sin publicar quedó listo y validado con `docker compose config`.
-
----
-
-## Resumen de entregables
-
-| Entregable | Estado |
-|---|---|
-| Repositorio en GitHub sin secretos | ✅ https://github.com/Mario-Nicolas-Poveda/colegio-docker |
-| Imágenes `colegio-api` y `colegio-web` en GHCR con `1.0.0`, `1.0`, `sha-*` y `latest` | ✅ públicas |
-| Informe con evidencias y respuestas | ✅ este documento |
-| `README.md` con instrucciones de desarrollo y producción | ✅ |
-| URL pública con HTTPS (opcional) | ❌ sin VPS ni dominio; configuración lista |
+Con Docker la aplicación se ejecuta igual en cualquier equipo, y con Compose el sistema completo se levanta con un solo comando y en el orden correcto. Los multi-stage builds redujeron la imagen de la API de 1,64 GB a 245 MB y dejaron la del frontend en 81,9 MB. Con el pipeline de GitHub Actions, cada versión se prueba antes de publicarse, y desplegar, actualizar o revertir se reduce a cambiar una etiqueta en el .env.
