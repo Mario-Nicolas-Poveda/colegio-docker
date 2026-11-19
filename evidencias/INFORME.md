@@ -224,6 +224,27 @@ Antes de restaurar hubo que borrar la tabla, porque al iniciar con el volumen va
 
 La parte B, el despliegue con HTTPS en un VPS, no se hizo porque no se contaba con un servidor ni con un dominio. El archivo compose.prod.yaml con Traefik sí quedó configurado en el repositorio.
 
+## Reto adicional: escaneo de seguridad con Trivy
+
+Se agregó al workflow un job de seguridad que construye la imagen de producción de cada servicio y la escanea con Trivy. Primero muestra un reporte de las vulnerabilidades altas y críticas, y después falla si encuentra alguna crítica que ya tenga corrección disponible. El job de publicar ahora depende tanto de las pruebas como de este escaneo, así que una imagen con vulnerabilidades críticas no llega al registro.
+
+El cambio se subió en el pull request #2. En la primera ejecución el escaneo de web falló por una vulnerabilidad crítica en el paquete brotli-libs de la imagen base de Nginx (CVE-2026-111497), y la publicación no se ejecutó:
+
+![](capturas/f8-trivy-fallo.png)
+
+![](capturas/f8-trivy-log.png)
+
+Para corregirlo se modificaron los Dockerfiles. En el frontend se agregó apk upgrade en la etapa final para actualizar los paquetes de Alpine, manteniendo el usuario sin privilegios. En la API se quitó npm de la imagen de producción, ya que solo se usa node para ejecutarla y npm traía sus propias dependencias vulnerables. Con eso el escaneo pasó:
+
+![](capturas/f8-trivy-ok.png)
+
+| Imagen | Antes | Después |
+|---|---|---|
+| colegio-web | 1 crítica, 56 altas | 0 críticas, 0 altas |
+| colegio-api | 0 críticas, 10 altas | 0 críticas, 0 altas |
+
+Como contrapartida, la imagen web pasó de 81,9 MB a 116 MB por la capa que agrega la actualización de paquetes, y la de la API de 245 MB a 254 MB. El pull request se fusionó en main y las imágenes corregidas se publicaron como versión 1.2.0.
+
 ## Conclusiones
 
 Con Docker la aplicación se ejecuta igual en cualquier equipo, y con Compose el sistema completo se levanta con un solo comando y en el orden correcto. Los multi-stage builds redujeron la imagen de la API de 1,64 GB a 245 MB y dejaron la del frontend en 81,9 MB. Con el pipeline de GitHub Actions, cada versión se prueba antes de publicarse, y desplegar, actualizar o revertir se reduce a cambiar una etiqueta en el .env.
