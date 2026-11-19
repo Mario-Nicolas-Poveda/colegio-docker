@@ -1,0 +1,20 @@
+== Observabilidad: 500 peticiones
+$ docker stats (bajo carga)
+NAME            CPU %     MEM USAGE / LIMIT     NET I/O
+colegio-web-1   1.40%     8.109MiB / 7.399GiB   126kB / 129kB
+colegio-api-1   6.80%     20.22MiB / 7.399GiB   103kB / 115kB
+colegio-db-1    0.90%     20.38MiB / 7.399GiB   14.6kB / 54.8kB
+$ docker compose logs api --since 5m | grep -c '"estado":200'  -> 505
+$ docker compose logs api | grep -E '"estado":(4|5)[0-9]{2}'
+{"fecha":"2026-11-19T00:25:43.316Z","metodo":"GET","ruta":"/api/estudiantes/999","estado":404,"ms":9.6}
+{"fecha":"2026-11-19T00:25:43.430Z","metodo":"POST","ruta":"/api/estudiantes","estado":422,"ms":27.9}
+$ docker inspect --format {{json .State.Health}} colegio-api-1
+{"Status":"healthy","FailingStreak":0,"Log":[{"Start":"2026-11-19T00:24:52.066332687Z","End":"2026-11-19T00:24:52.541582293Z","ExitCode":0,"Output":""},{"Start":"2026-11-19T00:25:02.543821741Z","End":
+
+== Respaldo y restauración
+antes: "total":9
+Respaldo creado: respaldos/colegio-2026-11-18_1925.sql.gz
+ Volume colegio_datos-db  Removing
+ Volume colegio_datos-db  Removed
+tras desastre (down -v): "total":8
+tras restaurar respaldos/colegio-2026-11-18_1925.sql.gz: "total":9

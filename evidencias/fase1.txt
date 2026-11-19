@@ -1,0 +1,45 @@
+$ docker run hello-world
+Hello from Docker!
+
+$ docker run -d --name prueba-web -p 8080:80 nginx:1.29-alpine
+b84f06a0d694087b3d9b4d85ee11a288c1545618066c6394044199ab7d2694a2
+$ docker ps
+NAMES        IMAGE               STATUS         PORTS
+prueba-web   nginx:1.29-alpine   Up 3 seconds   0.0.0.0:8080->80/tcp, [::]:8080->80/tcp
+$ curl -I http://localhost:8080
+HTTP/1.1 200 OK
+Server: nginx/1.29.8
+Date: Thu, 19 Nov 2026 00:01:59 GMT
+$ docker logs prueba-web | tail -1
+172.17.0.1 - - [19/Nov/2026:00:01:59 +0000] "HEAD / HTTP/1.1" 200 0 "-" "curl/8.18.0" "-"
+$ (tras stop/start) curl
+<h1>Colegio</h1>
+$ (tras rm y run nuevo) curl | grep title
+<title>Welcome to nginx!</title>
+
+== Paso 2: aislamiento
+$ docker run --rm alpine ps
+PID   USER     TIME  COMMAND
+    1 root      0:00 ps
+$ docker run --rm alpine hostname
+7699a190a445
+$ docker run --rm alpine ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN qlen 1000
+    inet 127.0.0.1/8 scope host lo
+2: eth0@if18: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue state UP 
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
+$ docker run --rm --memory=64m alpine cat /sys/fs/cgroup/memory.max
+67108864   # 64 MiB = 67108864 bytes
+
+== Paso 3: base de datos efímera
+2026-11-19 00:03:50.799 UTC [1] LOG:  database system is ready to accept connections
+$ psql SELECT version()
+ PostgreSQL 17.12 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+
+$ docker images
+REPOSITORY:TAG                    SIZE
+postgres:17-alpine                424MB
+alpine:latest                     13MB
+nginx:1.29-alpine                 93.5MB
+hello-world:latest                25.9kB
+postgres:latest                   649MB

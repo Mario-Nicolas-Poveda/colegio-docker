@@ -1,0 +1,47 @@
+# Producción en un VPS: Traefik como reverse proxy con certificados de Let's Encrypt.
+# Uso: docker compose -f compose.yaml -f compose.prod.yaml up -d --no-build
+# Requiere DOMINIO y ACME_EMAIL en .env y el DNS apuntando al servidor.
+services:
+  proxy:
+    image: traefik:v3.5
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=colegio_red-web
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL:?Defina ACME_EMAIL en .env}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - certificados:/letsencrypt
+    networks:
+      - red-web
+
+  web:
+    # Ya no se publica el 8080: solo Traefik recibe tráfico desde fuera.
+    ports: !reset []
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.colegio.rule=Host(`${DOMINIO:?Defina DOMINIO en .env}`)
+      - traefik.http.routers.colegio.entrypoints=websecure
+      - traefik.http.routers.colegio.tls.certresolver=le
+      - traefik.http.services.colegio.loadbalancer.server.port=8080
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  api:
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  certificados:

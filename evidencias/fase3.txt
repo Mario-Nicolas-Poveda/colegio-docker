@@ -1,0 +1,43 @@
+$ docker build --target pruebas -t colegio-api:pruebas ./backend
+#12 2.213 # tests 20
+#12 2.214 # pass 20
+#12 2.214 # fail 0   (etapa pruebas OK)
+
+
+== Prueba rota a propósito (grado: 12 -> grado: 10)
+#12 ERROR: process "/bin/sh -c npm test" did not complete successfully: exit code: 1
+ERROR: failed to build: failed to solve: process "/bin/sh -c npm test" did not complete successfully: exit code: 1
+
+$ docker build --target produccion -t colegio-api:local ./backend
+OK
+$ docker build -t colegio-web:local --build-arg VITE_APP_VERSION=0.1.0 ./frontend
+OK
+$ docker build -t colegio-web:dev --target desarrollo ./frontend
+OK
+
+$ docker images "colegio-*"
+REPOSITORY:TAG                    SIZE
+colegio-web:local                 81.9MB
+colegio-web:dev                   355MB
+colegio-api:local                 245MB
+colegio-api:pruebas               249MB
+colegio-api:v2                    252MB
+colegio-api:v1                    1.64GB
+
+$ docker history colegio-web:local
+CREATED BY                                      SIZE
+EXPOSE [8080/tcp]                               0B
+COPY /app/dist /usr/share/nginx/html # build…   270kB
+COPY nginx.conf /etc/nginx/conf.d/default.co…   20.5kB
+LABEL org.opencontainers.image.title=colegio…   0B
+USER 101                                        0B
+RUN |2 UID=101 GID=101 /bin/sh -c set -x    …   43.6MB
+USER root                                       0B
+$ docker run --rm colegio-web:local id
+uid=101(nginx) gid=101(nginx) groups=101(nginx),101(nginx)
+$ docker run --rm colegio-web:local which node
+(sin resultado: Node no está en la imagen)
+$ docker run --rm colegio-api:local ls
+node_modules
+package.json
+src

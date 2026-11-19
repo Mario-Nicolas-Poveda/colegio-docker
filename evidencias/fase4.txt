@@ -1,0 +1,46 @@
+== Paso 1
+red-datos	internal=true
+red-web	internal=false
+datos-db
+
+== Paso 2: db
+/usr/local/bin/docker-entrypoint.sh: running /docker-entrypoint-initdb.d/01-esquema.sql
+/usr/local/bin/docker-entrypoint.sh: running /docker-entrypoint-initdb.d/02-datos.sql
+ documento |  nombre   | grado 
+-----------+-----------+-------
+ 1001      | Ana       |     5
+ 1002      | Carlos    |     5
+ 1003      | Lucía     |     7
+ 1004      | Mateo     |     7
+ 1005      | Valentina |     9
+ 1006      | Samuel    |     9
+ 1007      | Isabella  |    11
+ 1008      | Andrés    |    11
+(8 rows)
+
+== Paso 3: api en red-datos + red-web
+{ estado: 'ok', baseDeDatos: 'conectada', version: 'dev' }
+
+== Paso 4: web
+{"estado":"ok","baseDeDatos":"conectada","version":"dev"}
+$ registrar estudiante por la web (POST /api/estudiantes)
+{"id":9,"documento":"2026001","nombre":"Mario","apellido":"Poveda","grado":10,"correo":null,"creadoEn":"2026-11-19T00:13:58.846Z"}
+
+== Paso 5: aislamiento
+$ docker exec web nslookup api
+Name:	api
+Address: 172.19.0.2
+$ docker exec web nslookup db
+*** Can't find db: No answer
+
+$ docker exec db ping -c 1 8.8.8.8
+PING 8.8.8.8 (8.8.8.8): 56 data bytes
+ping: sendto: Network unreachable
+
+== Paso 6: persistencia
+$ docker logs db | grep -c initdb.d  -> 0
+$ curl /api/estudiantes | buscar 2026001
+"documento":"2026001","nombre":"Mario"
+
+== Paso 7: respaldo
+respaldo-fase4.sql: 125 líneas

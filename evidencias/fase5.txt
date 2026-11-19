@@ -1,0 +1,76 @@
+$ docker compose config --quiet
+Archivo válido
+$ docker compose up -d --build --wait
+ Container colegio-api-1  Started
+ Container colegio-api-1  Healthy
+ Container colegio-web-1  Started
+ Container colegio-web-1  Healthy
+ Container colegio-api-1  Healthy
+ Container colegio-db-1  Healthy
+SERVICE   STATUS
+api       Up 7 seconds (healthy)
+db        Up 13 seconds (healthy)
+web       Up 1 second
+
+$ docker compose logs api (últimas líneas)
+{"fecha":"2026-11-19T00:15:17.319Z","metodo":"GET","ruta":"/api/salud","estado":200,"ms":84.9}
+{"fecha":"2026-11-19T00:15:19.449Z","metodo":"GET","ruta":"/api/estudiantes","estado":200,"ms":14.8}
+
+== Paso 4: perfil herramientas
+ Container colegio-api-1  Healthy
+Adminer http://localhost:8081 -> HTTP 200
+
+== Paso 5: fallos
+ Container colegio-db-1  Stopped
+$ curl -i /api/salud
+HTTP/1.1 503 Service Unavailable
+{"estado":"error","baseDeDatos":"desconectada","version":"local"}
+tras ~55 s:
+SERVICE   STATUS
+adminer   Up About a minute
+api       Up About a minute (unhealthy)
+web       Up About a minute
+ Container colegio-db-1  Started
+SERVICE   STATUS
+adminer   Up About a minute
+api       Up 2 minutes (healthy)
+db        Up 6 seconds (healthy)
+web       Up About a minute
+RestartCount antes: 0
+$ docker compose exec api kill 1
+RestartCount después de kill 1: 1
+SERVICE   STATUS
+adminer   Up About a minute
+api       Up 6 seconds (healthy)
+db        Up 15 seconds (healthy)
+web       Up 2 minutes
+$ docker compose stop api
+ Container colegio-api-1  Stopped
+api	Exited (0) 5 seconds ago
+
+== Paso 6: desarrollo con recarga en caliente
+ Network colegio_red-datos  Removed
+$ docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+ Container colegio-db-1  Healthy
+ Container colegio-web-1  Healthy
+ Container colegio-api-1  Healthy
+Vite http://localhost:5173 -> HTTP 200
+Proxy de Vite a la API: {"estado":"ok","baseDeDatos":"conectada","version":"local"}
+$ logs api tras editar backend/src/app.js:
+Respuesta nueva: {"estado":"ok","baseDeDatos":"conectada","version":"local"}
+$ logs web tras editar Header.jsx:
+ Network colegio_red-web  Removed
+
+== Paso 7: ciclo de los datos
+con estudiante extra: total="total":9
+tras down + up: "total":9  (se conservan)
+tras down -v + up: "total":8  (vuelven los 8 iniciales)
+
+== Paso 6 (Windows): Compose Watch  ->  docker compose -f compose.yaml -f compose.dev.yaml -f compose.watch.yaml up --build --watch
+API tras editar app.js: {"estado":"ok","baseDeDatos":"conectada","version":"local","colegio":"UNICESAR"}
+Restarting 'src/server.js'
+{"nivel":"info","mensaje":"API escuchando en el puerto 3000","version":"local"}
+Vite tras editar Header.jsx:
+
+Syncing service "api" after 2 changes were detected
+Syncing service "web" after 3 changes were detected

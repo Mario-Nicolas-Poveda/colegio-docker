@@ -1,0 +1,37 @@
+== Tiempos de reconstrucción (tras cambiar el mensaje 404 en src/app.js)
+v1: 13.3 s (npm ci: SE EJECUTÓ)
+v2: 3.4 s (npm ci: CACHED)
+
+REPOSITORY:TAG   SIZE
+colegio-api:v2   252MB
+colegio-api:v1   1.64GB
+
+== Paso 4: API sin base de datos
+$ curl -i http://localhost:3000/api/salud
+HTTP/1.1 503 Service Unavailable
+{"estado":"error","baseDeDatos":"desconectada","version":"dev"}
+$ docker logs api-sola
+{"nivel":"info","mensaje":"API escuchando en el puerto 3000","version":"dev"}
+{"fecha":"2026-11-19T00:10:19.239Z","metodo":"GET","ruta":"/api/salud","estado":503,"ms":48.3}
+$ docker exec api-sola whoami
+node
+$ time docker stop api-sola (forma exec): 0.90 s
+
+$ docker run --rm colegio-api:v2   (sin variables)
+Faltan variables de entorno obligatorias: DB_NAME, DB_USER, DB_PASSWORD (o su versión _FILE)
+
+== Paso 5: forma shell
+$ docker exec api-shell ps
+PID   COMMAND
+    1 node src/server.js
+   14 ps -o pid,args
+$ time docker stop api-shell (forma shell): 1.22 s
+
+== v1: CMD npm start (forma shell, npm de intermediario)
+$ docker exec api-v1 ps -ef
+  PID COMMAND
+    1 /bin/sh -c npm start
+    8 npm start
+   19 sh -c node src/server.js
+   20 node src/server.js
+$ time docker stop api-v1: 1.85 s
