@@ -27,9 +27,41 @@ jobs:
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
 
+  seguridad:
+    name: Escaneo con Trivy (${{ matrix.servicio }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        servicio: [api, web]
+        include:
+          - servicio: api
+            contexto: ./backend
+          - servicio: web
+            contexto: ./frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Construir la imagen de producción
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.contexto }}
+          target: produccion
+          load: true
+          tags: colegio-${{ matrix.servicio }}:escaneo
+          cache-from: type=gha,scope=${{ matrix.servicio }}
+      - name: Reporte de vulnerabilidades altas y críticas
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.67.2
+          image --severity HIGH,CRITICAL --exit-code 0 colegio-${{ matrix.servicio }}:escaneo
+      - name: Fallar si hay vulnerabilidades críticas con corrección disponible
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.67.2
+          image --severity CRITICAL --ignore-unfixed --exit-code 1 colegio-${{ matrix.servicio }}:escaneo
+
   publicar:
     name: Publicar ${{ matrix.servicio }}
-    needs: pruebas
+    needs: [pruebas, seguridad]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     strategy:
