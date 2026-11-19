@@ -32,7 +32,7 @@ test('rechaza un apellido vacío', () => {
 });
 
 test('rechaza un grado fuera del rango', () => {
-  const r = validarEstudiante({ ...valido, grado: 12 });
+  const r = validarEstudiante({ ...valido, grado: 10 });
   assert.equal(r.valido, false);
   assert.ok(r.errores.grado);
 });
